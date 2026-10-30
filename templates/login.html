@@ -1,0 +1,69 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0B1730">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>QuickRefill</title>
+  <link rel="manifest" href="{% static 'manifest.json' %}">
+  <link rel="apple-touch-icon" href="{% static 'icons/quickrefill.svg' %}">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head>
+<body class="login-page">
+  <main class="login-layout">
+    <div class="login-brand">
+      <div class="brand-lockup">
+        <div class="logo-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2c1.5 3 1 5.5-.5 7.2 2.2-.3 4.5-2 5.5-4.7 3 3.2 3.8 7.2 1.7 10.2C16.8 17.8 14.5 19 12 19s-4.8-1.2-6.7-4.3C3.2 11.7 4 7.7 7 4.5c.2 2.2 1.8 4.2 3.5 4.8C9.2 6.8 10 3.8 12 2z" fill="white"/></svg></div>
+        <strong>QuickRefill</strong>
+      </div>
+      <h1>Cooking gas at your door.</h1>
+      <p>Reliable cylinder delivery, right when you need it.</p>
+    </div>
+    <section class="login-sheet" aria-label="Sign in">
+      <div class="role-picker" role="group" aria-label="Choose account type">
+        <button type="button" data-role="customer">Customer</button>
+        <button type="button" data-role="rider">Rider</button>
+        <button type="button" data-role="vendor">Vendor</button>
+      </div>
+      <div class="auth-mode-picker" role="tablist" aria-label="Sign-in options">
+        <button type="button" role="tab" aria-selected="true" data-mode="login">Sign in</button>
+        <button type="button" role="tab" aria-selected="false" data-mode="register">Create account</button>
+      </div>
+      <form id="login-form">
+        <label class="auth-label" for="login-email">Email address</label>
+        <input id="login-email" class="auth-name-input" type="email" inputmode="email" autocomplete="email" maxlength="254" placeholder="name@example.com" required>
+        <label class="auth-label" for="login-password">Password</label>
+        <input id="login-password" class="auth-name-input" type="password" autocomplete="current-password" required>
+        <div id="login-error" class="auth-error" role="alert" aria-live="polite"></div>
+        <button class="btn btn-primary auth-submit" type="submit">Sign in</button>
+      </form>
+      <form id="register-form" class="hidden">
+        <div class="auth-name-grid">
+          <div>
+            <label class="auth-label" for="register-first-name">First name</label>
+            <input id="register-first-name" class="auth-name-input" type="text" autocomplete="given-name" maxlength="150" required>
+          </div>
+          <div>
+            <label class="auth-label" for="register-last-name">Last name</label>
+            <input id="register-last-name" class="auth-name-input" type="text" autocomplete="family-name" maxlength="150">
+          </div>
+        </div>
+        <label class="auth-label" for="register-email">Email address</label>
+        <input id="register-email" class="auth-name-input" type="email" inputmode="email" autocomplete="email" maxlength="254" placeholder="name@example.com" required>
+        <label class="auth-label" for="register-password">Create password</label>
+        <input id="register-password" class="auth-name-input" type="password" autocomplete="new-password" required>
+        <label class="auth-label" for="register-password-confirm">Confirm password</label>
+        <input id="register-password-confirm" class="auth-name-input" type="password" autocomplete="new-password" required>
+        <div id="register-error" class="auth-error" role="alert" aria-live="polite"></div>
+        <button class="btn btn-primary auth-submit" type="submit">Create customer account</button>
+      </form>
+      <div class="auth-support hidden" id="register-support">Rider and vendor accounts are created by QuickRefill support.</div>
+    </section>
+  </main>
+  <script src="{% static 'js/api.js' %}"></script>
+  <script src="{% static 'js/auth.js' %}"></script>
+</body>
+</html>

@@ -1,0 +1,126 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0B1730" />
+  <title>QuickRefill Vendor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{% static 'css/app.css' %}" />
+  <script src="{% static 'js/api.js' %}"></script>
+</head>
+<body class="vendor-page">
+<div class="vendor-layout">
+  <aside class="vendor-sidebar">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 8px 20px;">
+      <div class="logo-mark" style="width:36px;height:36px;">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2c1.5 3 1 5.5-.5 7.2 2.2-.3 4.5-2 5.5-4.7 3 3.2 3.8 7.2 1.7 10.2C16.8 17.8 14.5 19 12 19s-4.8-1.2-6.7-4.3C3.2 11.7 4 7.7 7 4.5c.2 2.2 1.8 4.2 3.5 4.8C9.2 6.8 10 3.8 12 2z" fill="white"/></svg>
+      </div>
+      <div>
+        <div style="font-weight:800;">QuickRefill</div>
+        <div style="font-size:12px;opacity:0.7;">Vendor</div>
+      </div>
+    </div>
+    <button class="nav-item active" data-panel="orders">Orders</button>
+    <button class="nav-item" data-panel="stock">Stock</button>
+    <button class="nav-item" data-panel="settlements">Settlements</button>
+    <button class="nav-item" data-panel="ratings">Ratings</button>
+    <button class="nav-item" data-panel="settings">Settings</button>
+    <a href="/logout/" class="vendor-logout">Log out</a>
+  </aside>
+
+  <main class="vendor-main">
+    <header class="vendor-mobile-bar">
+      <button id="vendor-menu-toggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button>
+      <strong>QuickRefill</strong>
+      <a href="/logout/" class="vendor-mobile-logout">Log out</a>
+    </header>
+    <div class="vendor-top">
+      <div>
+        <h1 style="margin:0;font-size:24px;font-weight:800;" id="vendor-name">QuickRefill Vendor</h1>
+        <div class="muted" style="margin-top:5px;" id="vendor-greet">Good day</div>
+        <div style="margin-top:8px;"><span class="verified-badge" id="verified-badge">✓ Verified partner</span></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:10px;background:#fff;padding:10px 14px;border-radius:14px;box-shadow:var(--shadow);cursor:pointer;">
+        <span style="font-weight:700;font-size:14px;">Accepting orders</span>
+        <div class="toggle" id="accepting-toggle"><span></span></div>
+      </label>
+    </div>
+
+    <div class="stat-grid">
+      <div class="stat-card"><div class="muted">Orders today</div><div class="value" id="stat-today">0</div></div>
+      <div class="stat-card"><div class="muted">Waiting for you</div><div class="value" id="stat-waiting">0</div></div>
+      <div class="stat-card"><div class="muted">Out for delivery</div><div class="value" id="stat-out">0</div></div>
+      <div class="stat-card"><div class="muted">Vendor rating</div><div class="value" id="stat-rating">4.8</div></div>
+    </div>
+
+    <section id="panel-orders">
+      <h2 style="font-weight:800;margin:0 0 12px;">Incoming orders</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Code</th><th>Customer / address</th><th>Cylinder</th><th>Type</th><th>Payment</th><th>Status</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="orders-body"></tbody>
+        </table>
+      </div>
+
+      <div class="settlement-card" id="settlement-teaser">
+        <div style="font-weight:800;font-size:18px;margin-bottom:12px;">This week's settlement</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px;">
+          <div><div style="opacity:0.7;font-size:12px;">Gas sales</div><div style="font-weight:800;" id="set-sales">—</div></div>
+          <div><div style="opacity:0.7;font-size:12px;">Commission 5%</div><div style="font-weight:800;" id="set-comm">—</div></div>
+          <div><div style="opacity:0.7;font-size:12px;">Payout</div><div style="font-weight:800;" id="set-payout">—</div></div>
+        </div>
+        <a href="#" id="link-settlement" style="color:#FB923C;font-weight:700;">View settlement report →</a>
+      </div>
+    </section>
+
+    <section id="panel-stock" class="hidden">
+      <h2 style="font-weight:800;margin:0 0 8px;">Stock</h2>
+      <p class="muted" style="margin:0 0 12px;">Customers see this live. Use + / − to update quantity.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Brand</th><th>Size</th><th>Refill price</th><th>Quantity</th></tr></thead>
+          <tbody id="stock-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="panel-settlements" class="hidden">
+      <h2 style="font-weight:800;margin:0 0 12px;">Settlements</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Week start</th><th>Gas sales</th><th>Commission</th><th>Payout</th></tr></thead>
+          <tbody id="settlements-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="panel-ratings" class="hidden">
+      <h2 style="font-weight:800;margin:0 0 12px;">Ratings</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Order</th><th>Vendor ★</th><th>Rider ★</th><th>Tags</th><th>Comment</th></tr></thead>
+          <tbody id="ratings-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="panel-settings" class="hidden">
+      <h2 style="font-weight:800;margin:0 0 12px;">Settings</h2>
+      <div class="card" style="max-width:480px;">
+        <div style="font-weight:800;" id="settings-name">QuickRefill Vendor</div>
+        <div class="muted" id="settings-loc">—</div>
+        <p class="muted" style="margin-top:12px;font-size:14px;">Verified partner account</p>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="{% static 'js/vendor.js' %}"></script>
+</body>
+</html>

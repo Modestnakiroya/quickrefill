@@ -1,0 +1,16 @@
+{
+  "name": "QuickRefill",
+  "short_name": "QuickRefill",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B1730",
+  "theme_color": "#F97316",
+  "icons": [
+    {
+      "src": "/static/icons/quickrefill.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
