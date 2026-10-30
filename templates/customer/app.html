@@ -13,7 +13,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="{% static 'css/app.css' %}" />
+  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20261030-desktop" />
   <script src="{% static 'js/api.js' %}"></script>
 </head>
 <body class="customer-app-page">
@@ -64,7 +64,7 @@
   <section id="view-orders" class="hidden" style="padding:16px;min-height:100vh;">
     <h2 style="margin:0 0 16px;font-weight:800;">Your orders</h2>
     <div id="orders-list"></div>
-    <nav class="bottom-nav" style="position:fixed;bottom:0;width:100%;max-width:420px;">
+    <nav class="bottom-nav" style="position:fixed;bottom:0;width:100%;">
       <button data-nav="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg><span>Home</span></button>
       <button class="active" data-nav="orders"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v17H5zM8 8h8M8 12h8M8 16h5"/></svg><span>Orders</span></button>
       <button data-nav="account"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Account</span></button>
@@ -79,7 +79,7 @@
       <div class="muted" id="account-phone" style="margin-top:4px;"></div>
       <a href="/logout/" class="btn btn-navy logout-button" style="margin-top:16px;display:block;text-align:center;">Log out</a>
     </div>
-    <nav class="bottom-nav" style="position:fixed;bottom:0;width:100%;max-width:420px;">
+    <nav class="bottom-nav" style="position:fixed;bottom:0;width:100%;">
       <button data-nav="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg><span>Home</span></button>
       <button data-nav="orders"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v17H5zM8 8h8M8 12h8M8 16h5"/></svg><span>Orders</span></button>
       <button class="active" data-nav="account"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Account</span></button>
