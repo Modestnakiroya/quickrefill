@@ -10,6 +10,22 @@
 
   if (!roles.includes(selectedRole)) selectedRole = 'customer';
 
+  const eyeIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const eyeOffIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.9 17.9A10.9 10.9 0 0 1 12 19C5.5 19 2 12 2 12a18 18 0 0 1 5.1-5.9M9.9 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-2.2 3.2M1 1l22 22"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+
+  document.querySelectorAll('.password-toggle').forEach(button => {
+    const input = button.previousElementSibling;
+    button.innerHTML = eyeIcon;
+    button.addEventListener('click', () => {
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      button.innerHTML = show ? eyeOffIcon : eyeIcon;
+      button.setAttribute('aria-pressed', String(show));
+      button.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      input.focus();
+    });
+  });
+
   const updateForm = () => {
     const canRegister = selectedRole === 'customer';
     loginForm.classList.toggle('hidden', selectedMode !== 'login');

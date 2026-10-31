@@ -475,3 +475,9 @@ input, select, textarea { font-size: 16px; }
     box-shadow: none;
   }
 }
+
+.password-field { position: relative; }
+.password-field .auth-name-input { padding-right: 48px; }
+.password-toggle { position: absolute; top: 0; right: 4px; width: 44px; height: 52px; border: 0; background: transparent; color: #64748B; cursor: pointer; display: grid; place-items: center; }
+.password-toggle:hover, .password-toggle:focus-visible { color: #0F172A; }
+.password-toggle svg { width: 22px; height: 22px; }
