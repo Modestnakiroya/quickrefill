@@ -12,6 +12,7 @@ const state = {
   riderStars: 5,
   vendorStars: 5,
   tags: [],
+  customCoords: null,
 };
 
 function showView(name) {
@@ -94,18 +95,31 @@ async function loadBrands() {
     updateContinue();
     return;
   }
+  const brandColors = {
+    Stabex: '#1E3A8A',
+    Oryx: '#B91C1C',
+    Total: '#EA580C',
+    Shell: '#D97706',
+    Hashi: '#15803D',
+  };
   state.brands.forEach(item => {
     const row = document.createElement('div');
     row.className = 'brand-item' + (item.clickable ? '' : ' disabled');
     if (state.selected && state.selected.id === item.id) row.classList.add('selected');
     const availClass = item.availability === 'out_of_stock' ? 'badge-grey'
       : item.availability === 'low' ? 'badge-amber' : 'badge-green';
+    const badgeColor = brandColors[item.brand] || '#0B1730';
     row.innerHTML = `
-      <div>
-        <div style="font-weight:800;">${item.brand}</div>
-        <div class="${availClass}">${item.availability_label}</div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="width:42px;height:42px;border-radius:11px;background:${badgeColor};color:#fff;display:grid;place-items:center;font-weight:800;font-size:13px;flex-shrink:0;">
+          ${item.size_kg}kg
+        </div>
+        <div>
+          <div style="font-weight:800;font-size:15px;">${item.brand} <span class="muted" style="font-weight:500;font-size:12px;">· ${item.vendor_name || 'Verified vendor'}</span></div>
+          <div class="${availClass}" style="margin-top:2px;">${item.availability_label}</div>
+        </div>
       </div>
-      <div style="font-weight:800;">${item.price_display}</div>
+      <div style="font-weight:800;font-size:15px;">${item.price_display}</div>
     `;
     if (item.clickable) {
       row.onclick = () => {
@@ -133,16 +147,97 @@ document.getElementById('btn-continue').onclick = () => {
   if (!state.selected) return;
   document.getElementById('co-item').textContent = `${state.selected.brand} ${state.selected.size_kg} kg`;
   document.getElementById('co-type').textContent = state.orderType === 'refill' ? 'Cylinder refill' : 'Brand exchange';
-  document.getElementById('co-address').textContent = document.getElementById('address-select').value;
+  const homeAddr = document.getElementById('address-select').value.trim();
+  const coAddrInput = document.getElementById('co-address');
+  if (homeAddr && !coAddrInput.value.trim()) {
+    coAddrInput.value = homeAddr;
+  } else if (homeAddr) {
+    coAddrInput.value = homeAddr;
+  }
   document.getElementById('co-gas').textContent = state.selected.price_display;
   document.getElementById('co-total').textContent = state.selected.continue_total_display;
   showView('checkout');
 };
 
+document.getElementById('co-address').addEventListener('input', (e) => {
+  document.getElementById('address-select').value = e.target.value;
+  state.customCoords = null;
+  document.getElementById('gps-status').textContent = 'Coordinates optional — rider uses your place & landmark';
+});
+
+document.getElementById('btn-use-gps').onclick = () => {
+  const statusEl = document.getElementById('gps-status');
+  if (!navigator.geolocation) {
+    statusEl.textContent = 'GPS not supported on this browser — place name will be used.';
+    return;
+  }
+  statusEl.textContent = 'Detecting your current location…';
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      state.customCoords = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+      };
+      statusEl.textContent = '✓ Current GPS location attached';
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${state.customCoords.lat}&lon=${state.customCoords.lng}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.display_name) {
+            const shortName = data.display_name.split(',').slice(0, 3).join(',').trim();
+            document.getElementById('co-address').value = shortName;
+            document.getElementById('address-select').value = shortName;
+          }
+        }
+      } catch (_) {
+        // Ignore reverse geocode failure; place name + GPS coords still work
+      }
+    },
+    () => {
+      statusEl.textContent = 'Could not read GPS — your typed place & landmark will be used.';
+    },
+    { enableHighAccuracy: true, timeout: 8000 }
+  );
+};
+
+async function geocodePlaceName(place, landmark) {
+  if (state.customCoords) return state.customCoords;
+  const query = `${place} ${landmark || ''} Kampala Uganda`.trim();
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=ug&q=${encodeURIComponent(query)}`
+    );
+    if (res.ok) {
+      const results = await res.json();
+      if (Array.isArray(results) && results.length > 0) {
+        return {
+          lat: parseFloat(results[0].lat),
+          lng: parseFloat(results[0].lon),
+        };
+      }
+    }
+  } catch (_) {
+    // Fallback to backend Kampala place dictionary
+  }
+  return null;
+}
+
 document.getElementById('btn-checkout-back').onclick = () => showView('home');
 document.getElementById('btn-edit-item').onclick = () => showView('home');
 
 document.getElementById('btn-place-order').onclick = async () => {
+  const deliveryAddress = (
+    document.getElementById('co-address').value.trim() ||
+    document.getElementById('address-select').value.trim()
+  );
+  if (!deliveryAddress) {
+    showToast('Please enter the name of your place or area.');
+    document.getElementById('co-address').focus();
+    return;
+  }
+  const addressNote = document.getElementById('co-note').value.trim();
   const pay = document.querySelector('input[name="pay"]:checked').value;
   const when = document.querySelector('input[name="when"]:checked').value;
   const markPaid = pay === 'momo' || pay === 'airtel';
@@ -153,20 +248,25 @@ document.getElementById('btn-place-order').onclick = async () => {
     document.getElementById('momo-overlay').classList.add('hidden');
   }
 
+  const coords = await geocodePlaceName(deliveryAddress, addressNote);
+  const payload = {
+    stock_item_id: state.selected.id,
+    order_type: state.orderType,
+    delivery_address: deliveryAddress,
+    address_note: addressNote,
+    schedule: when,
+    payment_method: pay,
+    mark_paid: markPaid,
+  };
+  if (coords && !Number.isNaN(coords.lat) && !Number.isNaN(coords.lng)) {
+    payload.lat = coords.lat;
+    payload.lng = coords.lng;
+  }
+
   try {
     const order = await api('/api/orders', {
       method: 'POST',
-      body: {
-        stock_item_id: state.selected.id,
-        order_type: state.orderType,
-        delivery_address: document.getElementById('address-select').value,
-        address_note: document.getElementById('co-note').value,
-        lat: 0.3285,
-        lng: 32.5590,
-        schedule: when,
-        payment_method: pay,
-        mark_paid: markPaid,
-      },
+      body: payload,
     });
     state.order = order;
     startTracking(order.id);
@@ -190,9 +290,10 @@ function ensureMap() {
     setTimeout(() => state.map.invalidateSize(), 100);
     return;
   }
-  state.map = L.map('map', { zoomControl: false }).setView([0.332, 32.563], 14);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap',
+  state.map = L.map('map', { zoomControl: true }).setView([0.332, 32.563], 14);
+  L.tileLayer('/api/tiles/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19,
   }).addTo(state.map);
 }
 
@@ -215,14 +316,22 @@ async function pollTrack(orderId) {
   ensureMap();
   upsertMarker('vendor', t.vendor_lat, t.vendor_lng, 'Vendor', '#0B1730');
   upsertMarker('you', t.customer_lat, t.customer_lng, 'You', '#C2410C');
-  if (t.rider_lat != null) upsertMarker('rider', t.rider_lat, t.rider_lng, 'Rider', '#15803D');
+  if (t.rider_lat != null && t.rider_lng != null) {
+    upsertMarker('rider', t.rider_lat, t.rider_lng, 'Rider', '#15803D');
+  } else if (state.markers.rider) {
+    state.map.removeLayer(state.markers.rider);
+    delete state.markers.rider;
+  }
 
   if (state.routeLine) state.map.removeLayer(state.routeLine);
+  const points = (t.rider_lat != null && t.rider_lng != null)
+    ? [[t.vendor_lat, t.vendor_lng], [t.rider_lat, t.rider_lng], [t.customer_lat, t.customer_lng]]
+    : [[t.vendor_lat, t.vendor_lng], [t.customer_lat, t.customer_lng]];
   state.routeLine = L.polyline(
-    [[t.vendor_lat, t.vendor_lng], [t.rider_lat || t.vendor_lat, t.rider_lng || t.vendor_lng], [t.customer_lat, t.customer_lng]],
+    points,
     { color: '#C2410C', weight: 4, opacity: 0.85 }
   ).addTo(state.map);
-  state.map.fitBounds(state.routeLine.getBounds(), { padding: [30, 30] });
+  state.map.fitBounds(state.routeLine.getBounds(), { padding: [35, 35], maxZoom: 16 });
 
   const etaEl = document.getElementById('track-eta');
   if (t.status === 'delivered') {
@@ -231,13 +340,26 @@ async function pollTrack(orderId) {
     etaEl.textContent = `Arriving in about ${t.eta_minutes} min`;
   }
   document.getElementById('track-meta').textContent = `${t.code} · ${t.item_label}`;
+  document.getElementById('track-vendor').textContent =
+    `${t.vendor_name}${t.vendor_location ? ' · ' + t.vendor_location : ''}`;
+  document.getElementById('track-dropoff').textContent = t.delivery_address || '—';
+  document.getElementById('track-landmark').textContent = t.address_note
+    ? `Landmark / note: ${t.address_note}`
+    : '';
   setProgress(t.progress_step || 1);
+
+  state.riderPhone = t.rider_phone || '+256700000002';
+  state.helpPhone = t.help_phone || '0784113900';
 
   if (t.rider_name) {
     document.getElementById('rider-name').textContent = t.rider_name;
     document.getElementById('rider-avatar').textContent = initials(t.rider_name);
     document.getElementById('rider-meta').textContent =
       `★ ${t.rider_rating} · ${t.rider_trips} trips · ${t.rider_plate}`;
+  } else {
+    document.getElementById('rider-name').textContent = 'Assigning rider…';
+    document.getElementById('rider-avatar').textContent = 'QR';
+    document.getElementById('rider-meta').textContent = 'Waiting for vendor confirmation';
   }
 
   const payLabel = t.payment_method === 'cash'
@@ -336,9 +458,21 @@ document.getElementById('btn-share').onclick = async () => {
   }
 };
 
+document.getElementById('rider-call').onclick = () => {
+  const riderPhone = state.riderPhone || '+256700000002';
+  showPhonePopup(
+    'To call the rider, copy and paste their number into the phone app and call him/her.',
+    riderPhone
+  );
+};
+
+document.getElementById('btn-get-help').onclick = () => {
+  showPhonePopup('For help call 0784113900', '0784113900');
+};
+
 document.getElementById('btn-order-details').onclick = () => {
   if (!state.order) return;
-  alert(`${state.order.code}\n${state.order.item_label || ''}\n${state.order.total_display}\n${state.order.delivery_address}`);
+  showOrderDetailsModal(state.order);
 };
 
 document.querySelectorAll('[data-nav]').forEach(btn => {
@@ -381,6 +515,7 @@ async function loadOrders() {
           <span class="status-pill ${o.status}">${o.status_label}</span>
         </div>
         <div class="muted" style="margin-top:6px;">${o.item_label}</div>
+        <div class="muted" style="font-size:12px;margin-top:2px;">${o.delivery_address}${o.address_note ? ' · ' + o.address_note : ''}</div>
         <div style="font-weight:700;margin-top:6px;">${o.total_display}</div>
       `;
       card.onclick = () => {

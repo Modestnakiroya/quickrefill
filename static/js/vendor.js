@@ -85,7 +85,7 @@ async function refreshOrdersAndStats() {
           refreshOrdersAndStats();
           loadStock();
         } catch (e) {
-          alert(e.message);
+          showToast(e.message);
         }
       };
       actions.appendChild(rej);
@@ -101,10 +101,18 @@ async function loadStock() {
   body.innerHTML = '';
   items.forEach(item => {
     const tr = document.createElement('tr');
+    let statusPill = '<span class="status-pill delivered">In stock</span>';
+    if (item.quantity <= 0) {
+      statusPill = '<span class="status-pill rejected">Out of stock</span>';
+    } else if (item.is_low) {
+      statusPill = `<span class="status-pill new">Low (${item.quantity} left)</span>`;
+    }
     tr.innerHTML = `
-      <td>${item.brand}</td>
+      <td><strong>${item.brand}</strong></td>
       <td>${item.size_kg} kg</td>
       <td>${item.price_display}</td>
+      <td>${item.price_exchange_display || formatUGX(item.price_exchange)}</td>
+      <td>${statusPill}</td>
       <td>
         <div class="stock-stepper">
           <button data-delta="-1">−</button>

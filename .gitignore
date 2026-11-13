@@ -13,3 +13,5 @@ staticfiles/
 *.log
 .idea/
 .vscode/
+
+.tile_cache/

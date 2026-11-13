@@ -10,6 +10,8 @@ urlpatterns = [
     path('rider/', views.rider_app, name='rider_app'),
     path('vendor/', views.vendor_app, name='vendor_app'),
 
+    path('api/tiles/<int:z>/<int:x>/<int:y>.png', api.map_tile, name='api_map_tile'),
+
     path('api/auth/login', api.login_account, name='api_login'),
     path('api/auth/register', api.register_customer, name='api_register'),
     path('api/me', api.me, name='api_me'),

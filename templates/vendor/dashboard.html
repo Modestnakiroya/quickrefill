@@ -8,8 +8,8 @@
   <title>QuickRefill Vendor</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20261030-desktop" />
-  <script src="{% static 'js/api.js' %}"></script>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20261113-4" />
+  <script src="{% static 'js/api.js' %}?v=20261113-4"></script>
 </head>
 <body class="vendor-page">
 <div class="vendor-layout">
@@ -85,7 +85,7 @@
       <p class="muted" style="margin:0 0 12px;">Customers see this live. Use + / − to update quantity.</p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Brand</th><th>Size</th><th>Refill price</th><th>Quantity</th></tr></thead>
+          <thead><tr><th>Brand</th><th>Size</th><th>Refill price</th><th>Exchange price</th><th>Status</th><th>Quantity</th></tr></thead>
           <tbody id="stock-body"></tbody>
         </table>
       </div>
@@ -121,6 +121,6 @@
     </section>
   </main>
 </div>
-<script src="{% static 'js/vendor.js' %}"></script>
+<script src="{% static 'js/vendor.js' %}?v=20261113-4"></script>
 </body>
 </html>
