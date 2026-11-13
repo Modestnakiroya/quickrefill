@@ -1,3 +1,4 @@
+import math
 import random
 import urllib.request
 import uuid
@@ -99,7 +100,6 @@ def _full_phone(nine):
     return f'+256{nine}'
 
 
-HARDCODED_RIDER_PHONE = '+256700000002'
 HELP_DESK_PHONE = '0784113900'
 
 
@@ -108,13 +108,6 @@ def _generate_order_code():
         code = f'QR-{random.randint(20000, 99999)}'
         if not Order.objects.filter(code=code).exists():
             return code
-
-
-def _get_seeded_rider():
-    user = User.objects.filter(phone=_full_phone('700000002'), role=User.ROLE_RIDER).first()
-    if not user:
-        return None
-    return getattr(user, 'rider_profile', None)
 
 
 def _require_role(user, role):
@@ -365,9 +358,9 @@ def order_detail(request, order_id):
             return Response({'detail': 'Forbidden.'}, status=403)
     if request.user.role == User.ROLE_RIDER:
         rider = getattr(request.user, 'rider_profile', None)
-        if not rider or (order.rider_id and order.rider_id != rider.id):
-            if order.status not in (Order.STATUS_RIDER_ASSIGNED, Order.STATUS_ACCEPTED) and order.rider_id != getattr(rider, 'id', None):
-                pass
+        in_pool = order.rider_id is None and order.status == Order.STATUS_ACCEPTED
+        if not rider or not (order.rider_id == rider.id or in_pool):
+            return Response({'detail': 'Forbidden.'}, status=403)
     return Response(OrderSerializer(order).data)
 
 
@@ -377,6 +370,52 @@ def _interpolate(v_lat, v_lng, c_lat, c_lng, progress):
         v_lat + (c_lat - v_lat) * progress,
         v_lng + (c_lng - v_lng) * progress,
     )
+
+
+LIVE_FRESH_SECONDS = 30   # a GPS fix older than this is treated as "not live"
+RIDER_SPEED_KMH = 20      # average boda speed in Kampala traffic
+
+
+def _distance_km(lat1, lng1, lat2, lng2):
+    """Great-circle distance between two points in km."""
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = p2 - p1
+    dlmb = math.radians(lng2 - lng1)
+    h = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(h))
+
+
+def _minutes_for(km):
+    return max(1, int(round(km / RIDER_SPEED_KMH * 60)))
+
+
+def _rider_has_live_fix(rider):
+    if not rider or not rider.location_updated_at:
+        return False
+    age = (timezone.now() - rider.location_updated_at).total_seconds()
+    return age <= LIVE_FRESH_SECONDS
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def rider_location(request):
+    """Rider's phone posts its GPS position here every few seconds."""
+    if not _require_role(request.user, User.ROLE_RIDER):
+        return Response({'detail': 'Riders only.'}, status=403)
+    try:
+        lat = float(request.data.get('lat'))
+        lng = float(request.data.get('lng'))
+    except (TypeError, ValueError):
+        return Response({'detail': 'lat and lng are required numbers.'}, status=400)
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180) or math.isnan(lat) or math.isnan(lng):
+        return Response({'detail': 'Coordinates out of range.'}, status=400)
+    rider = request.user.rider_profile
+    rider.lat = lat
+    rider.lng = lng
+    rider.location_updated_at = timezone.now()
+    rider.save(update_fields=['lat', 'lng', 'location_updated_at'])
+    return Response({'ok': True})
 
 
 @api_view(['GET'])
@@ -389,26 +428,36 @@ def order_track(request, order_id):
     except Order.DoesNotExist:
         return Response({'detail': 'Not found.'}, status=404)
 
+    user = request.user
+    allowed = (
+        (user.role == User.ROLE_CUSTOMER and order.customer_id == user.id)
+        or (user.role == User.ROLE_VENDOR and hasattr(user, 'vendor_profile')
+            and order.vendor_id == user.vendor_profile.id)
+        or (user.role == User.ROLE_RIDER and hasattr(user, 'rider_profile')
+            and order.rider_id == user.rider_profile.id)
+    )
+    if not allowed:
+        return Response({'detail': 'Forbidden.'}, status=403)
+
     vendor = order.vendor
     rider = order.rider
-    eta_minutes = 45
-    rider_lat = None
-    rider_lng = None
     rider_name = None
     rider_rating = None
     rider_trips = None
     rider_plate = None
-    rider_phone = HARDCODED_RIDER_PHONE
+    rider_phone = None
+    rider_lat = None   # no rider marker until a rider is assigned
+    rider_lng = None
+    live = False
 
     if rider:
         rider_name = rider.user.get_full_name() or rider.user.username
         rider_rating = float(rider.rating)
         rider_trips = rider.trips_count
         rider_plate = rider.vehicle_plate
-        rider_lat = rider.lat
-        rider_lng = rider.lng
-        if rider.user.phone:
-            rider_phone = rider.user.phone
+        rider_phone = rider.user.phone or None
+        rider_lat, rider_lng = rider.lat, rider.lng
+        live = _rider_has_live_fix(rider)   # real GPS received in the last 30 s
 
     status_progress = {
         Order.STATUS_NEW: 1,
@@ -421,26 +470,32 @@ def order_track(request, order_id):
         Order.STATUS_CANCELLED: 0,
     }
 
+    cust_lat, cust_lng = order.lat, order.lng
+    trip_km = _distance_km(vendor.lat, vendor.lng, cust_lat, cust_lng)
     start_move_at = order.on_the_way_at or order.collected_at
-    if order.status in (Order.STATUS_COLLECTED, Order.STATUS_ON_THE_WAY) and start_move_at:
-        elapsed = (timezone.now() - start_move_at).total_seconds()
-        trip_seconds = 180  # 3 minute simulated trip
-        progress = min(1.0, elapsed / trip_seconds)
-        rider_lat, rider_lng = _interpolate(
-            vendor.lat, vendor.lng, order.lat, order.lng, progress
-        )
-        if rider:
-            rider.lat = rider_lat
-            rider.lng = rider_lng
-            rider.save(update_fields=['lat', 'lng'])
-        eta_minutes = max(1, int(round((1 - progress) * 15)))
-    elif order.status == Order.STATUS_DELIVERED:
+    moving = order.status in (Order.STATUS_COLLECTED, Order.STATUS_ON_THE_WAY)
+
+    if order.status == Order.STATUS_DELIVERED:
         eta_minutes = 0
-        rider_lat, rider_lng = order.lat, order.lng
-    elif order.status in (Order.STATUS_RIDER_ASSIGNED, Order.STATUS_ACCEPTED):
-        eta_minutes = 35
-    elif order.status == Order.STATUS_NEW:
-        eta_minutes = 50
+        rider_lat, rider_lng = cust_lat, cust_lng
+    elif order.status in (Order.STATUS_NEW, Order.STATUS_ACCEPTED):
+        # No rider yet: vendor prep time + vendor -> customer trip.
+        eta_minutes = 10 + _minutes_for(trip_km)
+    elif moving and live:
+        eta_minutes = _minutes_for(_distance_km(rider_lat, rider_lng, cust_lat, cust_lng))
+    elif moving and start_move_at:
+        # Fallback demo mode (no GPS from the rider): animate vendor -> customer.
+        progress = min(1.0, (timezone.now() - start_move_at).total_seconds() / 180)
+        rider_lat, rider_lng = _interpolate(vendor.lat, vendor.lng, cust_lat, cust_lng, progress)
+        eta_minutes = max(1, int(round((1 - progress) * _minutes_for(trip_km))))
+    else:
+        # Rider assigned, heading to the vendor: rider -> vendor -> customer.
+        to_vendor = _distance_km(rider_lat, rider_lng, vendor.lat, vendor.lng) if (live and rider) else 0
+        eta_minutes = _minutes_for(to_vendor + trip_km) + 3
+
+    location_age = None
+    if rider and rider.location_updated_at:
+        location_age = int((timezone.now() - rider.location_updated_at).total_seconds())
 
     return Response({
         'order_id': order.id,
@@ -460,6 +515,8 @@ def order_track(request, order_id):
         'rider_plate': rider_plate,
         'rider_phone': rider_phone,
         'help_phone': HELP_DESK_PHONE,
+        'live': live,
+        'location_age_seconds': location_age,
         'rider_lat': rider_lat,
         'rider_lng': rider_lng,
         'vendor_lat': vendor.lat,
@@ -528,13 +585,8 @@ def vendor_accept(request, order_id):
     order.stock_item.quantity -= 1
     order.stock_item.save(update_fields=['quantity'])
 
-    rider = _get_seeded_rider()
     order.status = Order.STATUS_ACCEPTED
     order.accepted_at = timezone.now()
-    if rider:
-        order.rider = rider
-        order.status = Order.STATUS_RIDER_ASSIGNED
-        order.rider_assigned_at = timezone.now()
     order.save()
     return Response(OrderSerializer(order).data)
 
@@ -688,36 +740,24 @@ def rider_jobs_available(request):
         return Response({'detail': 'Riders only.'}, status=403)
     rider = request.user.rider_profile
 
-    session_active = request.session.get('rider_active_order')
-    if session_active:
-        try:
-            active_order = Order.objects.select_related(
-                'stock_item', 'vendor', 'customer'
-            ).get(id=session_active, rider=rider)
-            if active_order.status not in (
-                Order.STATUS_DELIVERED, Order.STATUS_REJECTED, Order.STATUS_CANCELLED
-            ):
-                return Response({'mode': 'active', 'job': _job_payload(active_order, request)})
-        except Order.DoesNotExist:
-            pass
-
-    in_progress = Order.objects.filter(
+    active = Order.objects.filter(
         rider=rider,
-        status__in=[Order.STATUS_COLLECTED, Order.STATUS_ON_THE_WAY],
-    ).select_related('stock_item', 'vendor', 'customer').order_by('-created_at').first()
-    if in_progress:
-        return Response({'mode': 'active', 'job': _job_payload(in_progress, request)})
+        status__in=[Order.STATUS_RIDER_ASSIGNED, Order.STATUS_COLLECTED, Order.STATUS_ON_THE_WAY],
+    ).select_related('stock_item', 'vendor', 'customer').order_by('created_at').first()
+    if active:
+        return Response({'mode': 'active', 'job': _job_payload(active, request)})
 
     if not rider.online:
         return Response({'mode': 'offline', 'job': None})
 
+    # Job pool: orders a vendor accepted that no rider has claimed yet.
     declined = set(request.session.get('declined_jobs', []))
     offer = Order.objects.filter(
-        rider=rider,
-        status=Order.STATUS_RIDER_ASSIGNED,
+        rider__isnull=True,
+        status=Order.STATUS_ACCEPTED,
     ).select_related('stock_item', 'vendor', 'customer').exclude(
         id__in=declined
-    ).order_by('-created_at').first()
+    ).order_by('accepted_at').first()
     if offer:
         return Response({'mode': 'offer', 'job': _job_payload(offer, request)})
 
@@ -751,8 +791,8 @@ def _job_payload(order, request=None):
         current_step = 6
 
     rider = order.rider
-    rider_lat = rider.lat if rider else 0.3380
-    rider_lng = rider.lng if rider else 32.5640
+    rider_lat = rider.lat if rider else None
+    rider_lng = rider.lng if rider else None
 
     return {
         'id': order.id,
@@ -779,7 +819,7 @@ def _job_payload(order, request=None):
         'status': order.status,
         'steps_done': steps_done,
         'current_step': min(current_step, 5),
-        'customer_phone': order.customer.phone or '+256700000001',
+        'customer_phone': order.customer.phone or None,
         'help_phone': HELP_DESK_PHONE,
         'lat': order.lat,
         'lng': order.lng,
@@ -796,17 +836,19 @@ def rider_accept_job(request, order_id):
     if not _require_role(request.user, User.ROLE_RIDER):
         return Response({'detail': 'Riders only.'}, status=403)
     rider = request.user.rider_profile
-    try:
-        order = Order.objects.select_related('stock_item', 'vendor', 'customer').get(
-            id=order_id, rider=rider, status=Order.STATUS_RIDER_ASSIGNED
-        )
-    except Order.DoesNotExist:
-        return Response({'detail': 'Job not found.'}, status=404)
-    request.session['rider_active_order'] = order.id
-    declined = request.session.get('declined_jobs', [])
-    if order.id in declined:
-        declined = [i for i in declined if i != order.id]
-        request.session['declined_jobs'] = declined
+    if not rider.online:
+        return Response({'detail': 'Go online to accept jobs.'}, status=400)
+    if Order.objects.filter(rider=rider, status__in=[
+        Order.STATUS_RIDER_ASSIGNED, Order.STATUS_COLLECTED, Order.STATUS_ON_THE_WAY,
+    ]).exists():
+        return Response({'detail': 'Finish your current delivery first.'}, status=400)
+    # Atomic claim: only one rider can win this order.
+    claimed = Order.objects.filter(
+        id=order_id, rider__isnull=True, status=Order.STATUS_ACCEPTED
+    ).update(rider=rider, status=Order.STATUS_RIDER_ASSIGNED, rider_assigned_at=timezone.now())
+    if not claimed:
+        return Response({'detail': 'Sorry, another rider already took this job.'}, status=409)
+    order = Order.objects.select_related('stock_item', 'vendor', 'customer').get(id=order_id)
     return Response({'mode': 'active', 'job': _job_payload(order, request)})
 
 
@@ -815,17 +857,10 @@ def rider_accept_job(request, order_id):
 def rider_decline_job(request, order_id):
     if not _require_role(request.user, User.ROLE_RIDER):
         return Response({'detail': 'Riders only.'}, status=403)
-    rider = request.user.rider_profile
-    try:
-        order = Order.objects.get(id=order_id, rider=rider, status=Order.STATUS_RIDER_ASSIGNED)
-    except Order.DoesNotExist:
-        return Response({'detail': 'Job not found.'}, status=404)
     declined = request.session.get('declined_jobs', [])
-    if order.id not in declined:
-        declined.append(order.id)
+    if order_id not in declined:
+        declined.append(order_id)
     request.session['declined_jobs'] = declined
-    if request.session.get('rider_active_order') == order.id:
-        del request.session['rider_active_order']
     return Response({'ok': True, 'detail': 'Declined.'})
 
 
@@ -877,9 +912,10 @@ def rider_step(request, order_id):
         order.status = Order.STATUS_COLLECTED
         order.collected_at = timezone.now()
         order.save()
-        rider.lat = order.vendor.lat
-        rider.lng = order.vendor.lng
-        rider.save(update_fields=['lat', 'lng'])
+        if not _rider_has_live_fix(rider):
+            rider.lat = order.vendor.lat
+            rider.lng = order.vendor.lng
+            rider.save(update_fields=['lat', 'lng'])
     elif step == 'seal_checked':
         order.seal_checked = True
         order.status = Order.STATUS_ON_THE_WAY
@@ -910,11 +946,7 @@ def rider_step(request, order_id):
         order.delivered_at = timezone.now()
         order.save()
         rider.trips_count += 1
-        rider.lat = order.lat
-        rider.lng = order.lng
-        rider.save(update_fields=['trips_count', 'lat', 'lng'])
-        if request.session.get('rider_active_order') == order.id:
-            del request.session['rider_active_order']
+        rider.save(update_fields=['trips_count'])
 
     order.refresh_from_db()
     return Response({'mode': 'active', 'job': _job_payload(order, request)})

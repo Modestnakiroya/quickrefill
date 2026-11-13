@@ -69,6 +69,7 @@ class Rider(models.Model):
     vehicle_plate = models.CharField(max_length=20, default='UBE 204Q')
     lat = models.FloatField(default=0.3350)
     lng = models.FloatField(default=32.5670)
+    location_updated_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return self.user.get_full_name() or self.user.username

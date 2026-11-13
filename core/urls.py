@@ -35,5 +35,6 @@ urlpatterns = [
     path('api/rider/jobs/<int:order_id>/accept', api.rider_accept_job, name='api_rider_accept'),
     path('api/rider/jobs/<int:order_id>/decline', api.rider_decline_job, name='api_rider_decline'),
     path('api/rider/jobs/<int:order_id>/step', api.rider_step, name='api_rider_step'),
+    path('api/rider/location', api.rider_location, name='api_rider_location'),
     path('api/rider/summary', api.rider_summary, name='api_rider_summary'),
 ]

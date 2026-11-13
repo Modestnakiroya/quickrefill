@@ -91,3 +91,8 @@ SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 
 DELIVERY_FEE = 5000
 RIDER_FEE = 4000
+
+# Fast password hashing when running the test suite (cuts test time ~10x).
+import sys
+if 'test' in sys.argv:
+    PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']

@@ -54,6 +54,7 @@ class OrderSerializer(serializers.ModelSerializer):
     total_display = serializers.SerializerMethodField()
     status_label = serializers.CharField(source='get_status_display', read_only=True)
     item_label = serializers.SerializerMethodField()
+    rated = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -66,7 +67,7 @@ class OrderSerializer(serializers.ModelSerializer):
             'status', 'status_label', 'rider_fee', 'handover_confirmed',
             'empty_collected', 'seal_checked', 'created_at', 'accepted_at',
             'rider_assigned_at', 'collected_at', 'on_the_way_at', 'delivered_at',
-            'item_label',
+            'item_label', 'rated',
         ]
         read_only_fields = [
             'code', 'customer', 'vendor', 'rider', 'gas_price', 'delivery_fee',
@@ -89,6 +90,9 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_item_label(self, obj):
         return f'{obj.stock_item.brand} {obj.stock_item.size_kg} kg {obj.get_order_type_display()}'
+
+    def get_rated(self, obj):
+        return hasattr(obj, 'rating')
 
 
 class OrderCreateSerializer(serializers.Serializer):

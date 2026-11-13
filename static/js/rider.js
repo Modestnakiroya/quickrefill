@@ -61,6 +61,56 @@ document.getElementById('online-toggle').onclick = async () => {
   }
 };
 
+// ---- Live GPS: share this phone's position while online or on a job ----
+const gps = { watchId: null, lastSent: 0, warned: false };
+
+function syncGps() {
+  const wanted = state.online || state.mode === 'active';
+  if (wanted && gps.watchId === null) startGps();
+  if (!wanted && gps.watchId !== null) stopGps();
+}
+
+function startGps() {
+  if (!('geolocation' in navigator)) {
+    if (!gps.warned) { gps.warned = true; showToast('This device has no GPS. Customers will see an estimated position.'); }
+    return;
+  }
+  gps.watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      const now = Date.now();
+      if (now - gps.lastSent < 4000) return;
+      gps.lastSent = now;
+      api('/api/rider/location', {
+        method: 'POST',
+        body: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+      }).catch(() => {});
+      setGpsBadge(true);
+      if (state.map) upsertRiderMarker('me', pos.coords.latitude, pos.coords.longitude, 'You', '#15803D');
+    },
+    (err) => {
+      setGpsBadge(false);
+      if (!gps.warned) {
+        gps.warned = true;
+        showToast(err.code === 1
+          ? 'Location is blocked. Allow location (HTTPS or localhost required) so customers can track you.'
+          : 'Cannot get your GPS position yet.');
+      }
+    },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+  );
+}
+
+function stopGps() {
+  if (gps.watchId !== null) navigator.geolocation.clearWatch(gps.watchId);
+  gps.watchId = null;
+  setGpsBadge(false);
+}
+
+function setGpsBadge(on) {
+  const el = document.getElementById('gps-badge');
+  if (el) el.textContent = on ? '● GPS live' : '○ GPS off';
+}
+
 function startPolling() {
   if (state.pollTimer) clearInterval(state.pollTimer);
   pollJobs();
@@ -73,6 +123,7 @@ async function pollJobs() {
     state.mode = data.mode;
     state.job = data.job;
     renderJob();
+    syncGps();
   } catch (e) {
     showToast(e.message);
   }
@@ -246,7 +297,11 @@ function renderActive() {
   }
 
   document.getElementById('btn-call-customer').onclick = () => {
-    const custPhone = job.customer_phone || '+256700000001';
+    const custPhone = job.customer_phone;
+    if (!custPhone) {
+      showToast('This customer has no phone number on file.');
+      return;
+    }
     showPhonePopup(
       'To call the customer, copy and paste their number into the phone app and call him/her.',
       custPhone

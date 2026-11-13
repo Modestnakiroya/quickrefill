@@ -312,12 +312,18 @@ function upsertMarker(key, lat, lng, label, color) {
 }
 
 async function pollTrack(orderId) {
-  const t = await api(`/api/orders/${orderId}/track`);
+  let t;
+  try {
+    t = await api(`/api/orders/${orderId}/track`);
+  } catch (e) {
+    document.getElementById('track-meta').textContent = 'Connection lost. Retrying…';
+    return;
+  }
   ensureMap();
   upsertMarker('vendor', t.vendor_lat, t.vendor_lng, 'Vendor', '#0B1730');
   upsertMarker('you', t.customer_lat, t.customer_lng, 'You', '#C2410C');
   if (t.rider_lat != null && t.rider_lng != null) {
-    upsertMarker('rider', t.rider_lat, t.rider_lng, 'Rider', '#15803D');
+    upsertMarker('rider', t.rider_lat, t.rider_lng, t.live ? 'Rider (live)' : 'Rider', '#15803D');
   } else if (state.markers.rider) {
     state.map.removeLayer(state.markers.rider);
     delete state.markers.rider;
@@ -339,7 +345,11 @@ async function pollTrack(orderId) {
   } else {
     etaEl.textContent = `Arriving in about ${t.eta_minutes} min`;
   }
-  document.getElementById('track-meta').textContent = `${t.code} · ${t.item_label}`;
+  let liveTag = '';
+  if (['rider_assigned', 'collected', 'on_the_way'].includes(t.status) && t.rider_name) {
+    liveTag = t.live ? ' · ● Live location' : ' · Estimated position';
+  }
+  document.getElementById('track-meta').textContent = `${t.code} · ${t.item_label}${liveTag}`;
   document.getElementById('track-vendor').textContent =
     `${t.vendor_name}${t.vendor_location ? ' · ' + t.vendor_location : ''}`;
   document.getElementById('track-dropoff').textContent = t.delivery_address || '—';
@@ -348,18 +358,24 @@ async function pollTrack(orderId) {
     : '';
   setProgress(t.progress_step || 1);
 
-  state.riderPhone = t.rider_phone || '+256700000002';
+  state.riderPhone = t.rider_phone || null;
   state.helpPhone = t.help_phone || '0784113900';
-
+  document.getElementById('trust-seal').textContent =
+    t.seal_checked ? '\u2713 Seal checked' : '\u25CB Seal check happens at pickup';
+  const callEl = document.getElementById('rider-call');
   if (t.rider_name) {
+    callEl.classList.toggle('hidden', !t.rider_phone);
     document.getElementById('rider-name').textContent = t.rider_name;
     document.getElementById('rider-avatar').textContent = initials(t.rider_name);
     document.getElementById('rider-meta').textContent =
       `★ ${t.rider_rating} · ${t.rider_trips} trips · ${t.rider_plate}`;
   } else {
+    callEl.classList.add('hidden');
     document.getElementById('rider-name').textContent = 'Assigning rider…';
     document.getElementById('rider-avatar').textContent = 'QR';
-    document.getElementById('rider-meta').textContent = 'Waiting for vendor confirmation';
+    document.getElementById('rider-meta').textContent = t.status === 'new'
+      ? 'Waiting for the vendor to confirm'
+      : 'A nearby rider will pick up your order soon';
   }
 
   const payLabel = t.payment_method === 'cash'
@@ -459,7 +475,11 @@ document.getElementById('btn-share').onclick = async () => {
 };
 
 document.getElementById('rider-call').onclick = () => {
-  const riderPhone = state.riderPhone || '+256700000002';
+  const riderPhone = state.riderPhone;
+  if (!riderPhone) {
+    showToast('Your rider has no phone number on file. Use Get help.');
+    return;
+  }
   showPhonePopup(
     'To call the rider, copy and paste their number into the phone app and call him/her.',
     riderPhone
@@ -520,7 +540,9 @@ async function loadOrders() {
       `;
       card.onclick = () => {
         state.order = o;
-        if (o.status === 'delivered') {
+        if (o.status === 'delivered' && o.rated) {
+          showOrderDetailsModal(o);
+        } else if (o.status === 'delivered') {
           openRate({
             item_label: o.item_label,
             created_at: o.created_at,
