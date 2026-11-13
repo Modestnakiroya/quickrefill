@@ -6,19 +6,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0B1730" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
   <title>QuickRefill</title>
   <link rel="manifest" href="{% static 'manifest.json' %}" />
   <link rel="apple-touch-icon" href="{% static 'icons/quickrefill.svg' %}" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20261030-desktop" />
-  <script src="{% static 'js/api.js' %}"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20261113-4" />
+  <script src="{% static 'js/api.js' %}?v=20261113-4"></script>
 </head>
 <body class="rider-app-page">
 <div class="rider-shell" id="app">
 
   <section id="view-jobs" style="min-height:100vh;display:flex;flex-direction:column;">
-    <div style="padding:20px 16px 12px;">
+    <div id="rider-top-header" style="padding:20px 16px 12px;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <div>
           <div class="muted" style="font-size:13px;">Hi <span id="rider-hi">Rider</span>,</div>
@@ -38,7 +41,9 @@
     <div id="job-panel" class="rider-card-light" style="flex:1;">
       <div id="idle-state">
         <div style="text-align:center;padding:40px 10px;" class="muted">
-          <div style="font-size:40px;margin-bottom:8px;">🛵</div>
+          <div style="width:48px;height:48px;border-radius:14px;background:#F1F5F9;color:var(--navy);display:grid;place-items:center;margin:0 auto 12px;">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 16h18l-2-7H5zM5 16l-1 4h16l-1-4M7 9l2-4h6l2 4"/></svg>
+          </div>
           <div style="font-weight:700;color:var(--navy);">Waiting for jobs</div>
           <p>Turn online to receive new deliveries.</p>
         </div>
@@ -52,10 +57,11 @@
         </div>
         <div class="muted" style="margin-bottom:14px;" id="offer-meta">3.2 km · ~18 min</div>
         <div style="border-left:3px solid var(--orange);padding-left:12px;margin-bottom:14px;">
-          <div class="muted" style="font-size:12px;">Pickup</div>
+          <div class="muted" style="font-size:12px;">1. Pickup at Vendor</div>
           <div style="font-weight:700;" id="offer-pickup">—</div>
-          <div class="muted" style="font-size:12px;margin-top:10px;">Drop-off</div>
+          <div class="muted" style="font-size:12px;margin-top:10px;">2. Drop-off at Customer</div>
           <div style="font-weight:700;" id="offer-drop">—</div>
+          <div class="muted" style="font-size:12px;margin-top:2px;" id="offer-note"></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
           <div class="card" style="box-shadow:none;border:1px solid #E2E8F0;">
@@ -79,12 +85,23 @@
             <div style="font-weight:800;" id="active-code">QR-—</div>
             <div class="muted" id="active-step-label">Step 1 of 5</div>
           </div>
-          <button class="btn btn-ghost" style="color:var(--orange);font-weight:700;" onclick="alert('Help desk: +256 700 000 000')">Help</button>
+          <button type="button" class="btn btn-ghost" id="btn-rider-help" style="color:var(--orange);font-weight:700;">Help</button>
         </div>
-        <div style="font-size:22px;font-weight:800;line-height:1.25;margin-bottom:12px;" id="active-drop">—</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
-          <a class="btn btn-navy" id="btn-navigate" target="_blank" rel="noopener">Navigate</a>
-          <a class="btn btn-primary" id="btn-call-customer" href="tel:+256700000001">Call</a>
+
+        <div id="active-stage-card" style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:14px;padding:12px;margin-bottom:12px;">
+          <div id="active-stage-badge" style="font-size:11px;font-weight:800;color:var(--orange);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:4px;">
+            STAGE 1 OF 2 · PICKUP AT VENDOR
+          </div>
+          <div style="font-size:19px;font-weight:800;line-height:1.25;color:var(--navy);" id="active-drop">—</div>
+          <div style="font-size:13px;font-weight:600;color:#9A3412;margin-top:4px;" id="active-landmark"></div>
+          <div class="muted" style="font-size:12px;margin-top:8px;padding-top:8px;border-top:1px dashed #FDBA74;" id="active-secondary-stop"></div>
+        </div>
+
+        <div id="rider-map" style="height:200px;border-radius:14px;margin-bottom:12px;overflow:hidden;border:1px solid #E2E8F0;"></div>
+
+        <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:10px;margin-bottom:16px;">
+          <a class="btn btn-navy" id="btn-navigate" target="_blank" rel="noopener">Navigate to Vendor</a>
+          <button type="button" class="btn btn-primary" id="btn-call-customer">Call Customer</button>
         </div>
         <div id="checklist"></div>
         <div class="card" style="background:#FEF3C7;border:none;margin:12px 0 16px;font-size:13px;">
@@ -133,6 +150,6 @@
     </nav>
   </section>
 </div>
-<script src="{% static 'js/rider.js' %}"></script>
+<script src="{% static 'js/rider.js' %}?v=20261113-3"></script>
 </body>
 </html>

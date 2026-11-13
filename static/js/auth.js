@@ -6,7 +6,9 @@
   const registerError = document.getElementById('register-error');
   const registerSupport = document.getElementById('register-support');
   let selectedRole = localStorage.getItem('quickrefill-role') || 'customer';
-  let selectedMode = 'login';
+  const urlParams = new URLSearchParams(window.location.search);
+  let selectedMode = urlParams.get('mode') === 'register' ? 'register' : 'login';
+  if (selectedMode === 'register') selectedRole = 'customer';
 
   if (!roles.includes(selectedRole)) selectedRole = 'customer';
 
@@ -91,11 +93,13 @@
     const submit = registerForm.querySelector('[type="submit"]');
     submit.disabled = true;
     try {
+      const phoneEl = document.getElementById('register-phone');
       const result = await api('/api/auth/register', {
         method: 'POST',
         body: {
           first_name: document.getElementById('register-first-name').value.trim(),
           last_name: document.getElementById('register-last-name').value.trim(),
+          phone: phoneEl ? phoneEl.value.trim() : '',
           email: document.getElementById('register-email').value.trim(),
           password: document.getElementById('register-password').value,
           password_confirm: document.getElementById('register-password-confirm').value,

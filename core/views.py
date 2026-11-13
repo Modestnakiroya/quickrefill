@@ -6,9 +6,7 @@ from .models import User
 
 
 def home(request):
-    if request.user.is_authenticated:
-        return _dashboard_redirect(request.user)
-    return login_page(request)
+    return render(request, 'landing.html')
 
 
 @ensure_csrf_cookie

@@ -87,5 +87,7 @@ REST_FRAMEWORK = {
 
 LOGIN_URL = '/login/'
 
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+
 DELIVERY_FEE = 5000
 RIDER_FEE = 4000

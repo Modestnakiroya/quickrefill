@@ -203,11 +203,10 @@ class Command(BaseCommand):
             user.first_name = first
             user.last_name = last
             changed = True
-        if user.email.endswith('@quickrefill.invalid'):
+        if user.email != email:
             user.email = email
-            user.set_password('QuickRefill-Local-Access-2026!')
             changed = True
-        elif not user.has_usable_password():
+        if created or not user.password or not user.has_usable_password() or not user.check_password('QuickRefill-Local-Access-2026!'):
             user.set_password('QuickRefill-Local-Access-2026!')
             changed = True
         if changed:

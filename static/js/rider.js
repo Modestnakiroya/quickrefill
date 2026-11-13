@@ -6,6 +6,9 @@ const state = {
   countdownTimer: null,
   countdown: 30,
   paymentConfirmed: false,
+  map: null,
+  markers: {},
+  routeLine: null,
 };
 
 function showTab(name) {
@@ -76,6 +79,7 @@ async function pollJobs() {
 }
 
 function renderJob() {
+  const topHeader = document.getElementById('rider-top-header');
   const idle = document.getElementById('idle-state');
   const offer = document.getElementById('offer-state');
   const active = document.getElementById('active-state');
@@ -83,12 +87,20 @@ function renderJob() {
   offer.classList.add('hidden');
   active.classList.add('hidden');
 
+  const isActiveDelivery = state.mode === 'active' && !!state.job;
+  if (topHeader) {
+    topHeader.classList.toggle('hidden', isActiveDelivery);
+  }
+
   if (state.mode === 'offer' && state.job) {
     offer.classList.remove('hidden');
     document.getElementById('offer-fee').textContent = state.job.fee_display;
     document.getElementById('offer-meta').textContent = `${state.job.distance_km} km · ~${state.job.eta_min} min`;
     document.getElementById('offer-pickup').textContent = state.job.pickup;
     document.getElementById('offer-drop').textContent = state.job.dropoff;
+    document.getElementById('offer-note').textContent = state.job.address_note
+      ? `Landmark / note: ${state.job.address_note}`
+      : '';
     document.getElementById('offer-cyl').textContent = state.job.cylinder;
     document.getElementById('offer-pay').textContent = state.job.payment_label;
     startCountdown();
@@ -103,7 +115,6 @@ function renderJob() {
   }
 
   idle.classList.remove('hidden');
-  const msg = idle.querySelector('div > div:nth-child(2)');
   if (state.mode === 'offline') {
     idle.querySelector('p').textContent = 'You are offline. Toggle online to get jobs.';
   } else {
@@ -150,30 +161,110 @@ document.getElementById('btn-decline').onclick = async () => {
 };
 
 const STEP_DEFS = [
-  { key: 'collected', label: 'Collected from vendor', hint: 'Upload pickup photo', photo: true },
-  { key: 'seal_checked', label: 'Seal and weight checked', hint: 'Confirm factory seal' },
-  { key: 'handover', label: 'Hand over the full cylinder and confirm the seal', hint: 'Customer confirms receipt' },
+  { key: 'collected', label: 'Collected from vendor', hint: 'Confirm cylinder pickup at vendor', photo: true },
+  { key: 'seal_checked', label: 'Seal and weight checked', hint: 'Confirm factory seal before heading to customer' },
+  { key: 'handover', label: 'Hand over the full cylinder and confirm the seal', hint: 'Customer confirms receipt at drop-off' },
   { key: 'empty_collected', label: 'Collect the empty cylinder', hint: 'Take the empty back' },
   { key: 'payment', label: 'Payment', hint: 'Confirm MoMo / collect cash' },
 ];
 
+function ensureRiderMap() {
+  const container = document.getElementById('rider-map');
+  if (!container) return;
+  if (state.map) {
+    setTimeout(() => state.map.invalidateSize(), 100);
+    return;
+  }
+  state.map = L.map('rider-map', { zoomControl: true }).setView([0.332, 32.563], 14);
+  L.tileLayer('/api/tiles/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19,
+  }).addTo(state.map);
+}
+
+function upsertRiderMarker(key, lat, lng, label, color) {
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="background:${color};color:#fff;padding:4px 8px;border-radius:10px;font-size:11px;font-weight:800;box-shadow:0 2px 8px rgba(0,0,0,.25);white-space:nowrap;">${label}</div>`,
+    iconSize: [85, 24],
+    iconAnchor: [42, 12],
+  });
+  if (state.markers[key]) {
+    state.markers[key].setLatLng([lat, lng]);
+  } else {
+    state.markers[key] = L.marker([lat, lng], { icon }).addTo(state.map);
+  }
+}
+
+function updateRiderMap(job, isPickupStage) {
+  ensureRiderMap();
+  if (!state.map) return;
+  upsertRiderMarker('vendor', job.vendor_lat, job.vendor_lng, '1. Vendor Pickup', '#0B1730');
+  upsertRiderMarker('customer', job.lat, job.lng, '2. Customer Drop-off', '#C2410C');
+
+  if (state.routeLine) state.map.removeLayer(state.routeLine);
+  state.routeLine = L.polyline(
+    [[job.vendor_lat, job.vendor_lng], [job.lat, job.lng]],
+    { color: isPickupStage ? '#0B1730' : '#C2410C', weight: 4, opacity: 0.85 }
+  ).addTo(state.map);
+  state.map.fitBounds(state.routeLine.getBounds(), { padding: [25, 25], maxZoom: 15 });
+}
+
 function renderActive() {
   const job = state.job;
-  document.getElementById('active-code').textContent = job.code;
+  const isPickupStage = !job.steps_done.collected;
+
+  document.getElementById('active-code').textContent = `${job.code} · ${job.cylinder}`;
   document.getElementById('active-step-label').textContent = `Step ${Math.min(job.current_step, 5)} of 5`;
-  document.getElementById('active-drop').textContent = job.dropoff;
-  document.getElementById('btn-navigate').href =
-    `https://www.openstreetmap.org/directions?from=${job.vendor_lat}%2C${job.vendor_lng}&to=${job.lat}%2C${job.lng}`;
-  if (job.customer_phone) {
-    document.getElementById('btn-call-customer').href = `tel:${job.customer_phone}`;
+
+  const stageBadge = document.getElementById('active-stage-badge');
+  const primaryStop = document.getElementById('active-drop');
+  const landmarkEl = document.getElementById('active-landmark');
+  const secondaryStop = document.getElementById('active-secondary-stop');
+  const navBtn = document.getElementById('btn-navigate');
+
+  if (isPickupStage) {
+    stageBadge.textContent = 'STAGE 1 OF 2 · GO TO VENDOR FOR PICKUP';
+    primaryStop.textContent = job.pickup;
+    landmarkEl.textContent = `Pick up: ${job.cylinder} (${job.order_type})`;
+    secondaryStop.textContent = `Next (Customer drop-off): ${job.dropoff}${job.address_note ? ' — ' + job.address_note : ''}`;
+    navBtn.textContent = 'Navigate to Vendor';
+    const fromLat = job.rider_lat || (job.vendor_lat + 0.004);
+    const fromLng = job.rider_lng || (job.vendor_lng - 0.004);
+    navBtn.href =
+      `https://www.openstreetmap.org/directions?from=${fromLat}%2C${fromLng}&to=${job.vendor_lat}%2C${job.vendor_lng}`;
+  } else {
+    stageBadge.textContent = 'STAGE 2 OF 2 · DELIVER TO CUSTOMER';
+    primaryStop.textContent = job.dropoff;
+    landmarkEl.textContent = job.address_note
+      ? `Landmark / Note: ${job.address_note}`
+      : 'No extra landmark note provided';
+    secondaryStop.textContent = `Picked up from: ${job.pickup}`;
+    navBtn.textContent = 'Navigate to Customer';
+    navBtn.href =
+      `https://www.openstreetmap.org/directions?from=${job.vendor_lat}%2C${job.vendor_lng}&to=${job.lat}%2C${job.lng}`;
   }
+
+  document.getElementById('btn-call-customer').onclick = () => {
+    const custPhone = job.customer_phone || '+256700000001';
+    showPhonePopup(
+      'To call the customer, copy and paste their number into the phone app and call him/her.',
+      custPhone
+    );
+  };
+  const helpBtn = document.getElementById('btn-rider-help');
+  if (helpBtn) {
+    helpBtn.onclick = () => {
+      showPhonePopup('For help call 0784113900', '0784113900');
+    };
+  }
+
+  updateRiderMap(job, isPickupStage);
 
   const box = document.getElementById('checklist');
   box.innerHTML = '';
   let foundCurrent = false;
   STEP_DEFS.forEach((step) => {
-    const done = !!job.steps_done[step.key] || (step.key === 'payment' && state.paymentConfirmed && job.payment_status === 'paid');
-    // For payment prepaid: still need to tick
     const isDone = step.key === 'payment'
       ? !!job.steps_done.payment || state.paymentConfirmed
       : !!job.steps_done[step.key];
@@ -215,17 +306,8 @@ function renderActive() {
     box.appendChild(row);
   });
 
-  const allDone = STEP_DEFS.every(s => {
-    if (s.key === 'payment') return state.job.steps_done.payment || state.paymentConfirmed || state.job.payment_status === 'paid';
-    return !!state.job.steps_done[s.key];
-  });
-  // payment step for momo: after ticking, steps_done.payment becomes true via session
-  const ready = STEP_DEFS.slice(0, 4).every(s => !!state.job.steps_done[s.key]) &&
-    (state.job.steps_done.payment || state.paymentConfirmed ||
-      (['momo', 'airtel'].includes(state.job.payment_method) && state.job.payment_status === 'paid' && state.paymentConfirmed));
-
   const slider = document.getElementById('slide-deliver');
-  const checklistComplete = STEP_DEFS.every((s, idx) => {
+  const checklistComplete = STEP_DEFS.every((s) => {
     if (s.key === 'payment') return state.paymentConfirmed || state.job.steps_done.payment;
     return !!state.job.steps_done[s.key];
   });
@@ -275,12 +357,11 @@ function setupSlider() {
 async function completeDelivery() {
   if (!state.job) return;
   try {
-    // Ensure payment step recorded
     if (!state.job.steps_done.payment && !state.paymentConfirmed) {
       await api(`/api/rider/jobs/${state.job.id}/step`, { method: 'POST', body: { step: 'payment' } });
       state.paymentConfirmed = true;
     }
-    const data = await api(`/api/rider/jobs/${state.job.id}/step`, {
+    await api(`/api/rider/jobs/${state.job.id}/step`, {
       method: 'POST',
       body: { step: 'delivered' },
     });
